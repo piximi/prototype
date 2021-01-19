@@ -1,4 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, {
+  ReactDOM,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as ReactKonva from "react-konva";
 import { Image as ImageType } from "../../../types/Image";
 import { Stage } from "konva/types/Stage";
@@ -18,6 +25,9 @@ import { Graph } from "ngraph.graph";
 import { PathFinder } from "ngraph.path";
 import { getIdx } from "../../../image/imageHelper";
 import { useDebounce } from "../../../hooks";
+import { Canvas } from "react-three-fiber";
+import { CanvasTexture } from "react-three-fiber/components";
+import { createPortal } from "react-dom";
 
 type MagneticSelectionProps = {
   image: ImageType;
@@ -42,10 +52,17 @@ export const MagneticSelection = ({ image }: MagneticSelectionProps) => {
   const [img] = useImage(image.src, "Anonymous");
 
   const stageRef = React.useRef<Stage>(null);
+  const canvasRef = useRef<HTMLCanvasElement | undefined>();
   const transformerRef = React.useRef<Transformer>(null);
   const imageRef = React.useRef<ImageKonvaType>(null);
   const [annotated, setAnnotated] = useState<boolean>(false);
   const [annotating, setAnnotating] = useState<boolean>(false);
+
+  const [canvas, setCanvas] = useState<HTMLCanvasElement | undefined>();
+
+  useEffect(() => {
+    setCanvas(canvasRef.current);
+  }, [canvasRef.current]);
 
   const [magneticSelectionAnchor, setMagneticSelectionAnchor] = useState<{
     x: number;
@@ -354,121 +371,153 @@ export const MagneticSelection = ({ image }: MagneticSelectionProps) => {
     ] // Only call effect if debounced search term changes
   );
 
+  const konvaLayerRefHandler = useCallback(
+    (layerNode) => {
+      if (layerNode) {
+        const sourceCanvas = layerNode.canvas._canvas;
+        canvasRef.current = sourceCanvas;
+      } else {
+        canvasRef.current = undefined;
+      }
+    },
+    [canvasRef]
+  );
+
   return (
-    <ReactKonva.Stage
-      globalCompositeOperation="destination-over"
-      height={image.shape?.r}
-      ref={stageRef}
-      width={image.shape?.c}
-    >
-      <ReactKonva.Layer
-        onMouseDown={onMagneticSelectionMouseDown}
-        onMouseMove={onMagneticSelectionMouseMove}
-        onMouseUp={onMagneticSelectionMouseUp}
-      >
-        <ReactKonva.Image image={img} ref={imageRef} />
-
-        {magneticSelectionStart && (
-          <ReactKonva.Circle
-            fill="#000"
-            globalCompositeOperation="source-over"
-            hitStrokeWidth={64}
-            id="start"
-            name="anchor"
-            radius={3}
-            ref={magneticSelectionStartingAnchorCircleRef}
-            stroke="#FFF"
-            strokeWidth={1}
-            x={magneticSelectionStart.x}
-            y={magneticSelectionStart.y}
-          />
+    <React.Fragment>
+      <Canvas>
+        {canvas && (
+          <>
+            <ambientLight />
+            <pointLight position={[10, 10, 10]} />
+            <mesh>
+              <meshBasicMaterial>
+                <CanvasTexture attach="map" args={[canvas]} />
+              </meshBasicMaterial>
+            </mesh>
+          </>
         )}
+      </Canvas>
+      {createPortal(
+        <>
+          <ReactKonva.Stage
+            globalCompositeOperation="destination-over"
+            height={image.shape?.r}
+            ref={stageRef}
+            width={image.shape?.c}
+          >
+            <ReactKonva.Layer
+              onMouseDown={onMagneticSelectionMouseDown}
+              onMouseMove={() => {}}
+              onMouseUp={onMagneticSelectionMouseUp}
+              ref={konvaLayerRefHandler}
+            >
+              <ReactKonva.Image image={img} ref={imageRef} />
 
-        {!annotated &&
-          annotating &&
-          magneticSelectionStrokes.map(
-            (stroke: { points: Array<number> }, key: number) => (
-              <React.Fragment>
-                <ReactKonva.Line
-                  key={key}
-                  points={stroke.points}
+              {magneticSelectionStart && (
+                <ReactKonva.Circle
+                  fill="#000"
+                  globalCompositeOperation="source-over"
+                  hitStrokeWidth={64}
+                  id="start"
+                  name="anchor"
+                  radius={3}
+                  ref={magneticSelectionStartingAnchorCircleRef}
                   stroke="#FFF"
                   strokeWidth={1}
+                  x={magneticSelectionStart.x}
+                  y={magneticSelectionStart.y}
                 />
+              )}
 
-                <ReactKonva.Line
-                  dash={[4, 2]}
-                  key={key}
-                  points={stroke.points}
+              {!annotated &&
+                annotating &&
+                magneticSelectionStrokes.map(
+                  (stroke: { points: Array<number> }, key: number) => (
+                    <React.Fragment>
+                      <ReactKonva.Line
+                        key={key}
+                        points={stroke.points}
+                        stroke="#FFF"
+                        strokeWidth={1}
+                      />
+
+                      <ReactKonva.Line
+                        dash={[4, 2]}
+                        key={key}
+                        points={stroke.points}
+                        stroke="#FFF"
+                        strokeWidth={1}
+                      />
+                    </React.Fragment>
+                  )
+                )}
+
+              {!annotated &&
+                annotating &&
+                magneticSelectionPreviousStroke.map(
+                  (stroke: { points: Array<number> }, key: number) => (
+                    <React.Fragment>
+                      <ReactKonva.Line
+                        key={key}
+                        points={stroke.points}
+                        stroke="#FFF"
+                        strokeWidth={1}
+                      />
+
+                      <ReactKonva.Line
+                        dash={[4, 2]}
+                        key={key}
+                        points={stroke.points}
+                        stroke="#FFF"
+                        strokeWidth={1}
+                      />
+                    </React.Fragment>
+                  )
+                )}
+
+              {magneticSelectionAnchor && (
+                <ReactKonva.Circle
+                  fill="#FFF"
+                  name="anchor"
+                  radius={3}
                   stroke="#FFF"
                   strokeWidth={1}
+                  x={magneticSelectionAnchor.x}
+                  y={magneticSelectionAnchor.y}
                 />
-              </React.Fragment>
-            )
-          )}
+              )}
 
-        {!annotated &&
-          annotating &&
-          magneticSelectionPreviousStroke.map(
-            (stroke: { points: Array<number> }, key: number) => (
-              <React.Fragment>
-                <ReactKonva.Line
-                  key={key}
-                  points={stroke.points}
-                  stroke="#FFF"
-                  strokeWidth={1}
-                />
+              {magneticSelectionAnnotation && annotated && !annotating && (
+                <React.Fragment>
+                  <ReactKonva.Line
+                    points={magneticSelectionAnnotation.points}
+                    stroke="#FFF"
+                    strokeWidth={1}
+                  />
 
-                <ReactKonva.Line
-                  dash={[4, 2]}
-                  key={key}
-                  points={stroke.points}
-                  stroke="#FFF"
-                  strokeWidth={1}
-                />
-              </React.Fragment>
-            )
-          )}
-
-        {magneticSelectionAnchor && (
-          <ReactKonva.Circle
-            fill="#FFF"
-            name="anchor"
-            radius={3}
-            stroke="#FFF"
-            strokeWidth={1}
-            x={magneticSelectionAnchor.x}
-            y={magneticSelectionAnchor.y}
-          />
-        )}
-
-        {magneticSelectionAnnotation && annotated && !annotating && (
-          <React.Fragment>
-            <ReactKonva.Line
-              points={magneticSelectionAnnotation.points}
-              stroke="#FFF"
-              strokeWidth={1}
-            />
-
-            <ReactKonva.Line
-              dash={[4, 2]}
-              points={magneticSelectionAnnotation.points}
-              stroke="#FFF"
-              strokeWidth={1}
-            />
-          </React.Fragment>
-        )}
-
-        <ReactKonva.Transformer
-          anchorFill="#FFF"
-          anchorStroke="#000"
-          anchorStrokeWidth={1}
-          anchorSize={6}
-          borderEnabled={false}
-          ref={transformerRef}
-          rotateEnabled={false}
-        />
-      </ReactKonva.Layer>
-    </ReactKonva.Stage>
+                  <ReactKonva.Line
+                    dash={[4, 2]}
+                    points={magneticSelectionAnnotation.points}
+                    stroke="#FFF"
+                    strokeWidth={1}
+                  />
+                </React.Fragment>
+              )}
+              <ReactKonva.Transformer
+                anchorFill="#FFF"
+                anchorStroke="#000"
+                anchorStrokeWidth={1}
+                anchorSize={6}
+                borderEnabled={false}
+                ref={transformerRef}
+                rotateEnabled={false}
+              />
+            </ReactKonva.Layer>
+          </ReactKonva.Stage>
+        </>,
+        document.body
+      )}
+    </React.Fragment>
   );
 };
